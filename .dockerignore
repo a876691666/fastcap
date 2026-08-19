@@ -1,0 +1,8 @@
+node_modules
+.tmp
+.bun-cache
+.render-cache
+release
+test
+*.log
+.DS_Store

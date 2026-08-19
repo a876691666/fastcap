@@ -1,0 +1,37 @@
+{
+  "files": {
+    "manifest.json": "{\"schema\":1,\"width\":800,\"height\":0,\"format\":\"png\",\"dpr\":2,\"template\":\"template.html\",\"entry\":\"render.js\"}",
+    "template.html": "<div style=\"display:flex;flex-direction:column;width:800px;background:#eef2f7;padding:16px;gap:16px;font-family:Noto Sans SC\"><div style=\"display:flex;flex-direction:column;background:#ffffff;border-radius:16px;padding:16px;box-shadow:0 2px 10px rgba(15,23,42,0.08)\"><div style=\"display:flex;flex-direction:row;justify-content:space-between;align-items:center;height:24px\"><div style=\"font-size:20px;font-weight:700;color:#0f172a\">👑 老板 · 我发布的</div><div style=\"font-size:14px;color:#64748b\">共 12 单 · 1.2B</div></div><div data-chart=\"boss\" style=\"margin-top:10px\"></div></div><div style=\"display:flex;flex-direction:column;background:#ffffff;border-radius:16px;padding:16px;box-shadow:0 2px 10px rgba(15,23,42,0.08)\"><div style=\"display:flex;flex-direction:row;justify-content:space-between;align-items:center;height:24px\"><div style=\"font-size:20px;font-weight:700;color:#0f172a\">🛠 打手 · 我接受的</div><div style=\"font-size:14px;color:#64748b\">共 8 单 · 5.2B</div></div><div data-chart=\"worker\" style=\"margin-top:10px\"></div></div></div>",
+    "render.js": "// /vl 任务图形总览 —— 图表体渲染（d3 生成 SVG，供 Satori 模板的 data-chart 槽位嵌入）\n// 每个分区（老板/打手）渲染一个 SVG：顶部堆叠状态条 + 图例行 + 用户横向条形。\n// 高度由 render-service auto-height 自动决定（manifest.height=0），槽位尺寸取 SVG 固有尺寸。\n// 数据形状：{ boss?: Section, worker?: Section }\n//   Section = { total_count, statuses:[{label,color,count,isk}], users_flat:[{label,count,isk,color}] }\n\nimport * as d3 from 'd3';\n\nconst W = 728;\nconst STACK_H = 16;\nconst LEGEND_Y = 26;\nconst ROWS_Y = 48;\nconst ROW_H = 26;\nconst BOTTOM_PAD = 8;\nconst BAR_MAX_W = 320;\nconst FONT = 'Noto Sans SC';\n\nfunction sectionHeight(rows) {\n  return ROWS_Y + rows.length * ROW_H + BOTTOM_PAD;\n}\n\nfunction renderSection(section) {\n  const statuses = section.statuses ?? [];\n  const rows = section.users_flat ?? [];\n  const h = sectionHeight(rows);\n  const svg = d3.select(document.body).append('svg').attr('width', W).attr('height', h).attr('viewBox', `0 0 ${W} ${h}`);\n  const total = Math.max(1, section.total_count ?? 0);\n  let cx = 0;\n  const segs = statuses.map((st) => {\n    const w = Math.max(2, (W * (st.count || 0)) / total);\n    const seg = { ...st, x: cx, w };\n    cx += w;\n    return seg;\n  });\n  svg.append('g').selectAll('rect').data(segs).join('rect')\n    .attr('x', (d) => d.x).attr('width', (d) => Math.max(0, d.w - 1))\n    .attr('y', 0).attr('height', STACK_H).attr('fill', (d) => d.color).attr('rx', 4);\n  const n = statuses.length;\n  const colW = n ? W / n : W;\n  statuses.forEach((st, i) => {\n    const gx = i * colW;\n    svg.append('circle').attr('cx', gx + 5).attr('cy', LEGEND_Y - 5).attr('r', 5).attr('fill', st.color);\n    svg.append('text').attr('x', gx + 15).attr('y', LEGEND_Y)\n      .attr('font-size', 13).attr('fill', '#475569').attr('font-family', FONT)\n      .text(`${st.label} ${st.count}·${st.isk}`);\n  });\n  const maxLen = Math.max(1, ...rows.map((r) => Math.sqrt(r.count || 0)));\n  rows.forEach((r, i) => {\n    const y = ROWS_Y + i * ROW_H;\n    const bw = Math.max(4, (Math.sqrt(r.count || 0) / maxLen) * BAR_MAX_W);\n    svg.append('rect').attr('x', 0).attr('y', y + 4).attr('width', bw).attr('height', 18)\n      .attr('fill', r.color).attr('rx', 5);\n    svg.append('text').attr('x', bw + 10).attr('y', y + 18)\n      .attr('font-size', 14).attr('fill', '#0f172a').attr('font-family', FONT).text(r.label);\n    svg.append('text').attr('x', W - 6).attr('y', y + 18)\n      .attr('text-anchor', 'end').attr('font-size', 13).attr('fill', '#64748b').attr('font-family', FONT)\n      .text(`${r.count}·${r.isk}`);\n  });\n  return svg.node().outerHTML;\n}\n\nexport default async function render({ data }) {\n  const out = {};\n  if (data?.boss) out.boss = renderSection(data.boss);\n  if (data?.worker) out.worker = renderSection(data.worker);\n  return out;\n}\n"
+  },
+  "data": {
+    "boss": {
+      "total_count": 12,
+      "statuses": [
+        { "label": "返工中", "color": "#eb504c", "count": 5, "isk": "534.6M" },
+        { "label": "已完成", "color": "#38ac60", "count": 3, "isk": "400.0M" },
+        { "label": "已接受", "color": "#4080ff", "count": 2, "isk": "150.0M" },
+        { "label": "待接受", "color": "#969696", "count": 2, "isk": "100.0M" }
+      ],
+      "users_flat": [
+        { "label": "张三", "count": 5, "isk": "534.6M", "color": "#eb504c" },
+        { "label": "李四", "count": 3, "isk": "400.0M", "color": "#38ac60" },
+        { "label": "王五", "count": 2, "isk": "150.0M", "color": "#4080ff" },
+        { "label": "未关联", "count": 2, "isk": "100.0M", "color": "#969696" }
+      ]
+    },
+    "worker": {
+      "total_count": 8,
+      "statuses": [
+        { "label": "已接受", "color": "#4080ff", "count": 4, "isk": "320.0M" },
+        { "label": "已结算", "color": "#ffaa2a", "count": 3, "isk": "280.0M" },
+        { "label": "返工中", "color": "#eb504c", "count": 1, "isk": "90.0M" }
+      ],
+      "users_flat": [
+        { "label": "赵六", "count": 4, "isk": "320.0M", "color": "#4080ff" },
+        { "label": "钱七", "count": 3, "isk": "280.0M", "color": "#ffaa2a" },
+        { "label": "孙八", "count": 1, "isk": "90.0M", "color": "#eb504c" }
+      ]
+    }
+  }
+}

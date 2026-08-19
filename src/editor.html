@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>render-service 模板编辑器</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --border:#334155; --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; font-weight:700; }
+  .spacer { flex:1; }
+  .actions { display:flex; gap:8px; align-items:center; }
+  button, select { background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:6px 12px; font-size:13px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#0f172a; border-color:var(--accent); font-weight:600; }
+  main { flex:1; display:flex; gap:12px; padding:12px; min-height:0; }
+  .editors { flex:1; display:flex; flex-direction:column; gap:10px; min-width:0; }
+  .editor { display:flex; flex-direction:column; gap:4px; flex:1; min-height:0; }
+  .editor label { font-size:12px; color:var(--muted); font-family: ui-monospace, monospace; }
+  .editor textarea { flex:1; width:100%; resize:none; background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size:12.5px; line-height:1.5; }
+  .editor textarea:focus { outline:1px solid var(--accent); }
+  .preview { flex:1; display:flex; flex-direction:column; gap:8px; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; min-width:0; overflow:auto; }
+  .preview .hint { color:var(--muted); font-size:12px; text-align:center; margin:auto; line-height:1.8; }
+  .preview img { max-width:100%; height:auto; border-radius:4px; background:#fff; }
+  #status { font-size:12px; font-family: ui-monospace, monospace; white-space:pre-wrap; word-break:break-all; }
+  #status.ok { color:#4ade80; }
+  #status.err { color:#f87171; }
+  @media (max-width: 900px) { main { flex-direction:column; } .preview { min-height:40vh; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>render-service 模板编辑器</h1>
+  <span style="font-size:12px;color:var(--muted)">Satori + d3 + resvg · 编辑 → 预览 → 导出</span>
+  <div class="spacer"></div>
+  <div class="actions">
+    <select id="example">
+      <option value="">加载示例…</option>
+      <option value="bar-chart">柱状图</option>
+      <option value="line-chart">折线+面积图</option>
+    </select>
+    <button id="render" class="primary">渲染预览</button>
+    <button id="export">导出模板包</button>
+    <button id="curl">复制 curl 命令</button>
+  </div>
+</header>
+<main>
+  <section class="editors">
+    <div class="editor"><label>manifest.json（width/height/format；height=0 为自动高度）</label><textarea id="manifest" spellcheck="false"></textarea></div>
+    <div class="editor"><label>template.html（Satori HTML/CSS；图表槽位用 &lt;div data-chart="名称"&gt;）</label><textarea id="template" spellcheck="false"></textarea></div>
+    <div class="editor"><label>render.js（d3 图表；export default async ({data}) =&gt; ({ 槽位名: svg })）</label><textarea id="renderjs" spellcheck="false"></textarea></div>
+    <div class="editor"><label>data（JSON，透传给 render.js；业务方主要改这里）</label><textarea id="data" spellcheck="false"></textarea></div>
+  </section>
+  <section class="preview">
+    <div id="status"></div>
+    <div class="hint" id="placeholder">点击「渲染预览」查看结果<br>「导出模板包」下载 { files, data }，业务方改 data 后 POST /render 即可</div>
+    <img id="img" alt="渲染预览" style="display:none">
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const EXAMPLES = {
+  'bar-chart': { data: { values: [12, 19, 8, 15, 22, 30, 27, 35, 40, 38, 45, 52] } },
+  'line-chart': { data: { series: Array.from({length: 12}, (_, i) => ({ date: '2024-' + String(i+1).padStart(2,'0') + '-01', value: Math.round(20 + 25*Math.sin(i/2) + Math.random()*10) })) } },
+};
+
+function setStatus(msg, cls) {
+  const s = $('status');
+  s.textContent = msg;
+  s.className = cls || '';
+}
+
+function collect() {
+  const files = {
+    'manifest.json': $('manifest').value,
+    'template.html': $('template').value,
+    'render.js': $('renderjs').value,
+  };
+  let data;
+  const dt = $('data').value.trim();
+  try { data = dt ? JSON.parse(dt) : {}; }
+  catch (e) { throw new Error('data 不是合法 JSON：' + e.message); }
+  return { files, data };
+}
+
+async function render() {
+  setStatus('渲染中…');
+  const img = $('img'), ph = $('placeholder');
+  try {
+    const body = collect();
+    const res = await fetch('/render', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { const j = await res.json(); msg += ` [${j.error?.code}] ${j.error?.message}`; } catch {}
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    img.src = URL.createObjectURL(blob);
+    img.style.display = 'block';
+    ph.style.display = 'none';
+    setStatus(`渲染成功（${blob.size} bytes）`, 'ok');
+  } catch (e) {
+    setStatus('渲染失败：' + e.message, 'err');
+  }
+}
+
+function exportTemplate() {
+  try {
+    const body = collect();
+    const blob = new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'template-package.json';
+    a.click();
+    setStatus('已导出 template-package.json（可直接 POST /render）', 'ok');
+  } catch (e) { setStatus('导出失败：' + e.message, 'err'); }
+}
+
+async function copyCurl() {
+  const cmd = `curl -X POST ${location.origin}/render \\\n  -H 'Content-Type: application/json' \\\n  --data-binary @template-package.json \\\n  -o out.png`;
+  try {
+    await navigator.clipboard.writeText(cmd);
+    setStatus('curl 命令已复制', 'ok');
+  } catch {
+    setStatus(cmd, 'ok');
+  }
+}
+
+async function loadExample(name) {
+  if (!name) return;
+  try {
+    const [manifest, template, renderjs] = await Promise.all([
+      fetch(`/examples/${name}/manifest.json`).then(r => r.text()),
+      fetch(`/examples/${name}/template.html`).then(r => r.text()),
+      fetch(`/examples/${name}/render.js`).then(r => r.text()),
+    ]);
+    $('manifest').value = manifest;
+    $('template').value = template;
+    $('renderjs').value = renderjs;
+    $('data').value = JSON.stringify(EXAMPLES[name]?.data ?? {}, null, 2);
+    setStatus(`已加载示例：${name}`, 'ok');
+    $('example').value = '';
+  } catch (e) {
+    setStatus('加载示例失败：' + e.message, 'err');
+  }
+}
+
+$('render').onclick = render;
+$('export').onclick = exportTemplate;
+$('curl').onclick = copyCurl;
+$('example').onchange = (e) => loadExample(e.target.value);
+
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); render(); }
+});
+
+// 默认加载柱状图示例
+loadExample('bar-chart');
+</script>
+</body>
+</html>

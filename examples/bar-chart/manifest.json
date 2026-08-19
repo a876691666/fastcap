@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "width": 1200,
+  "height": 630,
+  "format": "png",
+  "dpr": 2,
+  "template": "template.html",
+  "entry": "render.js"
+}

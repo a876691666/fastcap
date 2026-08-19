@@ -1,0 +1,12 @@
+node_modules/
+frontend/dist/
+release/
+templates/
+test/tmp-tpl/
+test/*.png
+.render-cache/
+.tmp/
+.bun-cache/
+*.in.json
+*.out.json
+.DS_Store

@@ -1,0 +1,39 @@
+{
+  "name": "render-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Satori + resvg + d3 image render service (Bun). HTTP API accepts a code package (manifest + HTML/CSS template + d3 script) and returns a rendered image.",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "smoke": "bun test/smoke.ts",
+    "html": "bun test/html.ts",
+    "unocss": "bun test/unocss.ts",
+    "integration": "bun test/integration.ts",
+    "http": "bun test/http.ts",
+    "contract": "bun test/contract.ts",
+    "vue": "bun test/vue.ts",
+    "templates": "bun test/templates.ts",
+    "test": "bun test/smoke.ts && bun test/html.ts && bun test/unocss.ts && bun test/integration.ts && bun test/http.ts && bun test/contract.ts && bun test/vue.ts && bun test/templates.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@unocss/core": "^66.8.0",
+    "@unocss/preset-wind": "^66.8.0",
+    "@vue/compiler-dom": "^3.5.41",
+    "@vue/server-renderer": "^3.5.41",
+    "css-to-react-native": "^3.2.0",
+    "d3": "^7.9.0",
+    "linkedom": "^0.18.13",
+    "node-html-parser": "^9.0.1",
+    "satori": "^0.29.0",
+    "vue": "^3.5.41"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/d3": "^7.4.3",
+    "@types/node": "^26.2.0"
+  }
+}

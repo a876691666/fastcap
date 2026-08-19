@@ -1,0 +1,23 @@
+{
+  "files": {
+    "manifest.json": "{\n  \"schema\": 1,\n  \"width\": 1200,\n  \"height\": 630,\n  \"format\": \"png\",\n  \"dpr\": 2,\n  \"template\": \"template.html\",\n  \"entry\": \"render.js\"\n}\n",
+    "template.html": "<div style=\"display:flex;flex-direction:column;width:1200px;height:630px;background:#0f172a;color:#e2e8f0;padding:48px;font-family:Arial Unicode MS, Arial\">\n  <div style=\"display:flex;flex-direction:column\">\n    <div style=\"font-size:48px;font-weight:700;letter-spacing:-1px\">月度营收 Monthly Revenue</div>\n    <div style=\"font-size:20px;color:#94a3b8;margin-top:8px\">2024 年各月营收（万元）</div>\n  </div>\n  <div data-chart=\"revenue\" style=\"width:1104px;height:400px;margin-top:28px\"></div>\n  <div style=\"display:flex;flex-direction:row;justify-content:space-between;margin-top:16px;color:#64748b;font-size:16px\">\n    <div>数据来源：示例数据</div>\n    <div>由 Satori + resvg + d3 渲染</div>\n  </div>\n</div>\n",
+    "render.js": "import * as d3 from 'd3';\n\n/**\n * 示例：柱状图。\n * 返回 { 槽位名: svg字符串 }，槽位名需与 template.html 中 data-chart=\"...\" 对应。\n * 环境提供全局 document（linkedom）与 serializeSvg() 助手。\n */\nexport default async function render({ data }) {\n  const values = data?.values ?? [12, 19, 8, 15, 22, 30, 27, 35, 40, 38, 45, 52];\n  const width = 1104;\n  const height = 400;\n  const margin = { top: 20, right: 24, bottom: 40, left: 48 };\n  const innerW = width - margin.left - margin.right;\n  const innerH = height - margin.top - margin.bottom;\n\n  const x = d3\n    .scaleBand()\n    .domain(d3.range(values.length))\n    .range([0, innerW])\n    .padding(0.25);\n  const y = d3\n    .scaleLinear()\n    .domain([0, d3.max(values)])\n    .nice()\n    .range([innerH, 0]);\n\n  const svg = d3\n    .select(document.body)\n    .append('svg')\n    .attr('width', width)\n    .attr('height', height)\n    .attr('viewBox', `0 0 ${width} ${height}`);\n\n  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);\n\n  // X 轴\n  g.append('g')\n    .attr('transform', `translate(0,${innerH})`)\n    .call(d3.axisBottom(x).tickFormat((d) => `${Number(d) + 1}月`))\n    .attr('color', '#94a3b8');\n\n  // Y 轴\n  g.append('g').call(d3.axisLeft(y).ticks(5)).attr('color', '#94a3b8');\n\n  // 柱\n  g.selectAll('rect')\n    .data(values)\n    .join('rect')\n    .attr('x', (d, i) => x(i))\n    .attr('y', (d) => y(d))\n    .attr('width', x.bandwidth())\n    .attr('height', (d) => innerH - y(d))\n    .attr('fill', '#38bdf8')\n    .attr('rx', 4);\n\n  return { revenue: svg.node().outerHTML };\n}\n"
+  },
+  "data": {
+    "values": [
+      12,
+      19,
+      8,
+      15,
+      22,
+      30,
+      27,
+      35,
+      40,
+      38,
+      45,
+      52
+    ]
+  }
+}

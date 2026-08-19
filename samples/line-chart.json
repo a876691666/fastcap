@@ -1,0 +1,59 @@
+{
+  "files": {
+    "manifest.json": "{\n  \"schema\": 1,\n  \"width\": 1200,\n  \"height\": 630,\n  \"format\": \"png\",\n  \"dpr\": 2,\n  \"template\": \"template.html\",\n  \"entry\": \"render.js\"\n}\n",
+    "template.html": "<div style=\"display:flex;flex-direction:column;width:1200px;height:630px;background:#f8fafc;color:#0f172a;padding:48px;font-family:Arial Unicode MS, Arial\">\n  <div style=\"display:flex;flex-direction:column\">\n    <div style=\"font-size:48px;font-weight:700;letter-spacing:-1px\">访问趋势 Traffic Trend</div>\n    <div style=\"font-size:20px;color:#64748b;margin-top:8px\">2024 年日访问量（万次）</div>\n  </div>\n  <div data-chart=\"trend\" style=\"width:1104px;height:400px;margin-top:28px\"></div>\n  <div style=\"display:flex;flex-direction:row;justify-content:space-between;margin-top:16px;color:#94a3b8;font-size:16px\">\n    <div>数据来源：请求参数 data.series</div>\n    <div>由 Satori + resvg + d3 渲染</div>\n  </div>\n</div>\n",
+    "render.js": "import * as d3 from 'd3';\n\n/**\n * 示例：时间序列折线 + 面积图（含渐变）。\n * 数据来自请求体 data.series：[{ date: 'YYYY-MM-DD', value: number }]\n */\nexport default async function render({ data }) {\n  const points = (data?.series ?? defaultSeries()).map((d) => ({\n    date: new Date(d.date),\n    value: d.value,\n  }));\n\n  const width = 1104;\n  const height = 400;\n  const margin = { top: 20, right: 24, bottom: 40, left: 48 };\n  const innerW = width - margin.left - margin.right;\n  const innerH = height - margin.top - margin.bottom;\n\n  const x = d3\n    .scaleTime()\n    .domain(d3.extent(points, (d) => d.date))\n    .range([0, innerW]);\n  const y = d3\n    .scaleLinear()\n    .domain([0, d3.max(points, (d) => d.value)])\n    .nice()\n    .range([innerH, 0]);\n\n  const line = d3\n    .line()\n    .x((d) => x(d.date))\n    .y((d) => y(d.value))\n    .curve(d3.curveMonotoneX);\n  const area = d3\n    .area()\n    .x((d) => x(d.date))\n    .y0(y(0))\n    .y1((d) => y(d.value))\n    .curve(d3.curveMonotoneX);\n\n  const svg = d3\n    .select(document.body)\n    .append('svg')\n    .attr('width', width)\n    .attr('height', height)\n    .attr('viewBox', `0 0 ${width} ${height}`);\n\n  // 渐变定义\n  svg\n    .append('defs')\n    .append('linearGradient')\n    .attr('id', 'areaGrad')\n    .attr('x1', '0')\n    .attr('y1', '0')\n    .attr('x2', '0')\n    .attr('y2', '1')\n    .selectAll('stop')\n    .data([\n      { offset: '0%', color: '#0ea5e9' },\n      { offset: '100%', color: 'rgba(14,165,233,0)' },\n    ])\n    .join('stop')\n    .attr('offset', (d) => d.offset)\n    .attr('stop-color', (d) => d.color);\n\n  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);\n\n  // 坐标轴\n  g.append('g')\n    .attr('transform', `translate(0,${innerH})`)\n    .call(d3.axisBottom(x).ticks(6).tickFormat(d3.timeFormat('%m月')))\n    .attr('color', '#94a3b8');\n  g.append('g').call(d3.axisLeft(y).ticks(5)).attr('color', '#94a3b8');\n\n  // 面积 + 折线 + 数据点\n  g.append('path').datum(points).attr('fill', 'url(#areaGrad)').attr('d', area);\n  g.append('path')\n    .datum(points)\n    .attr('fill', 'none')\n    .attr('stroke', '#0ea5e9')\n    .attr('stroke-width', 3)\n    .attr('d', line);\n  g.selectAll('circle')\n    .data(points)\n    .join('circle')\n    .attr('cx', (d) => x(d.date))\n    .attr('cy', (d) => y(d.value))\n    .attr('r', 4)\n    .attr('fill', '#0ea5e9')\n    .attr('stroke', '#f8fafc')\n    .attr('stroke-width', 1.5);\n\n  return { trend: svg.node().outerHTML };\n}\n\nfunction defaultSeries() {\n  const out = [];\n  const start = new Date('2024-01-01');\n  for (let i = 0; i < 24; i++) {\n    out.push({\n      date: new Date(start.getTime() + i * 15 * 86400000).toISOString().slice(0, 10),\n      value: Math.round(20 + 25 * Math.sin(i / 3) + Math.random() * 12),\n    });\n  }\n  return out;\n}\n"
+  },
+  "data": {
+    "series": [
+      {
+        "date": "2024-01-01",
+        "value": 23
+      },
+      {
+        "date": "2024-02-01",
+        "value": 41
+      },
+      {
+        "date": "2024-03-01",
+        "value": 48
+      },
+      {
+        "date": "2024-04-01",
+        "value": 48
+      },
+      {
+        "date": "2024-05-01",
+        "value": 50
+      },
+      {
+        "date": "2024-06-01",
+        "value": 43
+      },
+      {
+        "date": "2024-07-01",
+        "value": 24
+      },
+      {
+        "date": "2024-08-01",
+        "value": 16
+      },
+      {
+        "date": "2024-09-01",
+        "value": 9
+      },
+      {
+        "date": "2024-10-01",
+        "value": -4
+      },
+      {
+        "date": "2024-11-01",
+        "value": -2
+      },
+      {
+        "date": "2024-12-01",
+        "value": 5
+      }
+    ]
+  }
+}
