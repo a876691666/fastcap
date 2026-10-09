@@ -84,7 +84,9 @@ echo "render-service 已部署: http://<host>:8787/ （模板管理界面）"
 echo "渲染 API: POST http://<host>:8787/render  (通用代码包) / /api/templates/:id/render (模板 ID + data)"
 echo "查看日志: docker compose logs -f"
 EOF
-sed -i '' -e "s|__IMAGE__|${FULL}|g" -e "s|__PACKAGE__|${PACKAGE}|g" "$RELEASE/deploy.sh"
+# 跨平台 sed（BSD/macOS 需 -i 后缀，GNU/Linux 亦兼容 -i.bak）
+sed -i.bak -e "s|__IMAGE__|${FULL}|g" -e "s|__PACKAGE__|${PACKAGE}|g" "$RELEASE/deploy.sh"
+rm -f "$RELEASE/deploy.sh.bak"
 chmod +x "$RELEASE/deploy.sh"
 
 # 部署说明

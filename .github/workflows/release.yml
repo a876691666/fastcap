@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '发布标签（如 v0.2.0）'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 构建并发布 Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析版本
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            REF="${{ github.event.inputs.tag }}"
+          else
+            REF="${GITHUB_REF_NAME}"
+          fi
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+          echo "tag=${REF#v}" >> "$GITHUB_OUTPUT"
+
+      - name: 构建 release 包（docker-build.sh）
+        run: |
+          chmod +x docker-build.sh
+          ./docker-build.sh render-service "${{ steps.ver.outputs.tag }}"
+          cd release
+          zip -r "../render-service-${{ steps.ver.outputs.tag }}.zip" .
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.ref }}
+          name: render-service ${{ steps.ver.outputs.ref }}
+          generate_release_notes: true
+          files: |
+            render-service-${{ steps.ver.outputs.tag }}.zip
+            release/render-service-${{ steps.ver.outputs.tag }}.tar.gz

@@ -86,3 +86,16 @@ RENDER_SERVICE_URL=http://render-service:8787   # 或 http://127.0.0.1:8787
 - **端口**：默认 8787，`PORT` 可改。
 - **更新**：新镜像 `docker load` + `docker compose up -d`；配置/模板/字体热改（卷映射，无需重建）。
 - **体积**：无 Chromium，纯 CPU；Bun 运行时 + 少量 npm 包（含 Monaco 管理界面）。
+
+## 6. GitHub Actions（CI / 发布）
+
+- **CI**（`.github/workflows/ci.yml`）：`push` / `pull_request` 触发 → 安装依赖 → `bun run test` → 构建前端并上传 `frontend-dist` 产物；`main` 分支 push 时额外 `docker build` 验证镜像。
+- **Release**（`.github/workflows/release.yml`）：推送 `v*` tag（或在 Actions 页手动 `workflow_dispatch` 填 tag）→ 执行 `docker-build.sh` 产出 `release/` → 创建 GitHub Release，附带：
+  - `render-service-<ver>.zip`（整个 `release/` 目录打包：镜像包 + compose + deploy.sh + templates/ + fonts/）
+  - `render-service-<ver>.tar.gz`（docker 镜像包）
+
+发版：
+```bash
+git tag v0.2.0 && git push origin v0.2.0   # 触发 Release workflow
+```
+
