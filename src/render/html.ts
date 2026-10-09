@@ -27,6 +27,19 @@ export interface ChartSlot {
   height?: number;
 }
 
+/** <Chart> 组件占位：引用外部 chart 模板 */
+export interface ChartRef {
+  /** 唯一键（用于把解析结果映射回该占位元素） */
+  key: string;
+  /** chart 模板 ID */
+  id: string;
+  /** 传入图表的数据（缺省用 chart 模板自身 data.json） */
+  data: unknown;
+  /** 可选尺寸覆盖（px） */
+  width?: number;
+  height?: number;
+}
+
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 
@@ -90,13 +103,141 @@ export function extractChartSlots(root: HtmlNode): ChartSlot[] {
   return slots;
 }
 
+/** 从模板中收集所有 <Chart> 组件占位（data-chart-ref），并给元素打上唯一 data-chart-key */
+export function extractChartRefs(root: HtmlNode): ChartRef[] {
+  const refs: ChartRef[] = [];
+  let i = 0;
+  const visit = (node: HtmlNode) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType !== ELEMENT_NODE) continue;
+      const el = child as HTMLElement;
+      const id = el.getAttribute('data-chart-ref');
+      if (id) {
+        const key = `ref:${i++}`;
+        el.setAttribute('data-chart-key', key);
+        let data: unknown;
+        const raw = el.getAttribute('data-chart-data');
+        if (raw) {
+          try { data = JSON.parse(raw); } catch { data = undefined; }
+        }
+        refs.push({
+          key,
+          id,
+          data,
+          width: parsePx(el.getAttribute('data-chart-width')),
+          height: parsePx(el.getAttribute('data-chart-height')),
+        });
+      }
+      visit(el);
+    }
+  };
+  visit(root);
+  return refs;
+}
+
 /** 把解析树转换为 Satori 元素树，并把 data-chart 占位符替换成 <img> */
 export function rootToSatori(root: HtmlNode, charts: Record<string, ChartInjection>): SatoriElement[] {
   return topElements(root).map((el) => convert(el, charts));
 }
 
+/**
+ * 生成用于「HTML 阶段」预览的 HTML：
+ * - 把图表占位（data-chart-key / data-chart）替换成真实 <img>（data URI）；
+ * - 把 font-family 归一到渲染器实际加载的字体（模拟 Satori 的字体回退），
+ *   使浏览器预览的字体与最终图片一致。
+ * 注意：这是为预览准备的，Satori 渲染走 rootToSatori，二者互不影响。
+ */
+export function renderPreviewHtml(
+  root: HtmlNode,
+  charts: Record<string, ChartInjection>,
+  fontFamilies: string[],
+): string {
+  rewriteFontFamilies(root, fontFamilies);
+  injectChartImages(root, charts);
+  return root.toString();
+}
+
+/** 把每个元素的 font-family 归一到已加载字体：保留命中的字体，全不命中则用加载字体栈 */
+function rewriteFontFamilies(root: HtmlNode, fontFamilies: string[]): void {
+  if (fontFamilies.length === 0) return;
+  const known = new Set(fontFamilies.map((f) => f.toLowerCase()));
+  const fallback = fontFamilies.map((f) => `'${f}'`).join(',');
+  const visit = (node: HtmlNode) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType !== ELEMENT_NODE) continue;
+      const el = child as HTMLElement;
+      const style = el.getAttribute('style');
+      if (style && /font-family\s*:/i.test(style)) {
+        const next = style.replace(/font-family\s*:\s*([^;]*)/gi, (_m, val: string) => {
+          const families = String(val)
+            .split(',')
+            .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+            .filter(Boolean);
+          const hit = families.filter((f) => known.has(f.toLowerCase()));
+          const chosen = hit.length > 0 ? hit.map((f) => `'${f}'`).join(',') : fallback;
+          return `font-family:${chosen}`;
+        });
+        if (next !== style) el.setAttribute('style', next);
+      }
+      visit(el);
+    }
+  };
+  visit(root);
+}
+
+/** 图表占位 -> 真实 <img>（去掉 style 上的 width/height，尺寸用注入值） */
+function injectChartImages(root: HtmlNode, charts: Record<string, ChartInjection>): void {
+  const visit = (node: HtmlNode) => {
+    for (const child of [...node.childNodes]) {
+      if (child.nodeType !== ELEMENT_NODE) continue;
+      const el = child as HTMLElement;
+      const key = el.getAttribute('data-chart-key') ?? el.getAttribute('data-chart') ?? '';
+      const inj = key ? charts[key] : undefined;
+      if (inj) {
+        const style = stripSizeDecls(el.getAttribute('style'));
+        const styleAttr = style ? ` style="${style}"` : '';
+        el.replaceWith(
+          `<img src="${inj.dataUri}" width="${inj.width}" height="${inj.height}"${styleAttr}>`,
+        );
+      } else {
+        visit(el);
+      }
+    }
+  };
+  visit(root);
+}
+
+/** 去掉 style 里的 width/height 声明（图表图片尺寸由注入的 width/height 决定） */
+function stripSizeDecls(style: string | null | undefined): string {
+  if (!style) return '';
+  return style
+    .split(';')
+    .map((s) => s.trim())
+    .filter((d) => d && !/^(width|height)\s*:/i.test(d))
+    .join(';');
+}
+
 function convert(el: HTMLElement, charts: Record<string, ChartInjection>): SatoriElement {
   const tag = el.tagName.toLowerCase();
+
+  // <Chart> 组件占位 -> <img>（由外部 chart 模板解析注入）
+  const refKey = el.getAttribute('data-chart-key');
+  if (refKey) {
+    const inj = charts[refKey];
+    if (!inj) throw new Error(`未找到图表组件占位 ${refKey}（data-chart-ref）的渲染结果`);
+    const style = parseStyle(el.getAttribute('style'));
+    delete style.width;
+    delete style.height;
+    return {
+      type: 'img',
+      props: {
+        src: inj.dataUri,
+        width: inj.width,
+        height: inj.height,
+        ...(Object.keys(style).length > 0 ? { style } : {}),
+      },
+    };
+  }
 
   // 图表占位符 -> <img>（保留占位符自身样式，width/height 由注入值决定）
   const chartName = el.getAttribute('data-chart');

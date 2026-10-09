@@ -26,11 +26,13 @@ curl http://127.0.0.1:8787/health
 |---|---|---|
 | `GET` | `/` | 管理前端（模板列表/编辑/预览） |
 | `GET` | `/api/templates` | 模板列表（含 ID） |
-| `POST` | `/api/templates` | 创建模板 → `{id}` |
+| `POST` | `/api/templates` | 创建模板 → `{id}`（body 可带 `kind: 'vue' \| 'chart'`） |
 | `GET` | `/api/templates/:id` | 模板详情（files + data） |
 | `PUT` | `/api/templates/:id` | 保存模板 |
 | `DELETE` | `/api/templates/:id` | 删除模板 |
+| `POST` | `/api/templates/:id/rename` | 修改模板 ID → `{id}`（body `{id}`；新 ID 不能重复 → `409 CONFLICT`；自动改写其他模板的 `<Chart id>` 引用） |
 | `POST` | `/api/templates/:id/render` | 按模板 ID + data 渲染图片 |
+| `POST` | `/api/templates/:id/stages` | 管线阶段预览：返回 `{stages:{html,svg,finalSvg,autoHeight,contentBottom,width,height}}`（HTML 阶段 / SVG 截断，编辑器调试用） |
 | `GET` | `/playground` | 独立模板编辑器 |
 | `GET` | `/health` | 健康检查，返回 JSON |
 | `GET` | `/examples/*` | 示例代码包静态文件 |
@@ -97,12 +99,12 @@ assets/*         # 可选：字体、图片等资源
 ```json
 {
   "schema": 1,
+  "kind": "vue",
   "width": 1200,
   "height": 630,
   "format": "png",
   "dpr": 2,
   "template": "template.html",
-  "entry": "render.js",
   "fonts": [
     { "family": "Noto Sans SC", "path": "assets/NotoSansSC.otf", "weight": 400 }
   ],
@@ -113,14 +115,16 @@ assets/*         # 可选：字体、图片等资源
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `schema` | `1` | 必填 | 结构版本，当前固定 1 |
-| `width` / `height` | int | 必填 | 最终图片尺寸（1~10000 px） |
+| `kind` | `'vue' \| 'chart'` | `vue` | 模板类型；chart 无 Vue 模板，仅 render.js |
+| `width` / `height` | int | 必填 | 最终图片尺寸（1~10000 px）；chart 的 width=0 表示按 SVG 固有尺寸自适应 |
 | `format` | `'png' \| 'svg'` | `png` | 输出格式 |
 | `dpr` | number | `2` | 图表槽位光栅化倍率（≤4，用于高分屏） |
-| `template` | string | `template.html` | 模板文件路径 |
-| `entry` | string | `render.js` | 脚本入口路径 |
+| `template` | string | `template.html` | 模板文件路径（vue） |
 | `fonts` | FontSpec[] | `[]` | Satori 字体；缺省用系统/`RENDER_FONTS_DIR` |
 | `charts` | object | `{}` | 可选：显式指定槽位像素尺寸（覆盖占位符 style） |
 | 其他键 | any | - | 透传给 `render.js` 的 `manifest` 参数 |
+
+> 图表脚本入口固定为 `render.js`，不再通过 manifest 配置。
 
 `FontSpec`：`{ family, path?, data?(base64), weight?(400), style?('normal'|'italic') }`（`path` 与 `data` 二选一）。
 
@@ -128,6 +132,7 @@ assets/*         # 可选：字体、图片等资源
 
 - 内联 `style` 写布局，语法见 [`01-satori-html-css.md`](./01-satori-html-css.md)。
 - 图表占位符：`<div data-chart="槽位名" style="width:600px;height:300px"></div>`，渲染时替换为 d3 图表位图。
+- 引用独立图表模板（推荐）：`<Chart id="图表模板ID" :data="..." :width="..." :height="..." />`，服务端加载该 kind=chart 模板渲染成图片注入。
 
 ### 4.3 render.js（d3 脚本契约）
 
@@ -170,10 +175,13 @@ POST /render
 | `PORT` | `8787` | 监听端口 |
 | `HOST` | `127.0.0.1` | 监听地址 |
 | `RENDER_WORKDIR` | `./.render-cache` | 代码包临时落盘目录 |
-| `RENDER_TIMEOUT_MS` | `10000` | `render.js` 子进程超时 |
+| `RENDER_TIMEOUT_MS` | `10000` | `render.js` 执行超时（超时终止并重建 worker） |
 | `RENDER_MAX_BODY` | `20971520`（20MB） | 请求体上限 |
-| `RENDER_FONTS_DIR` | 空 | 默认字体目录（缺省 manifest.fonts 时扫描 `*.ttf/otf/woff`） |
+| `RENDER_FONTS_DIR` | 空 | 字体目录（缺省用项目 `fonts/`；加载 `*.ttf/otf/ttc`，不扫描系统字体） |
 | `TEMPLATES_DIR` | `./templates` | 模板文件存储目录（建议 Docker 卷映射持久化） |
+| `RENDER_WORKERS` | `2` | 常驻 render.js worker 并发数 |
+| `RENDER_WORKER_MAX_JOBS` | `500` | 每个 worker 处理多少任务后回收（限制模块缓存增长） |
+| `RENDER_WORKER_IDLE_MS` | `60000` | 热生存时限：空闲超过该毫秒数的 worker 被回收（0 = 不回收） |
 
 ---
 

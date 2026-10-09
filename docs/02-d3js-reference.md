@@ -394,8 +394,8 @@ const color = d3.scaleSequential(d3.interpolateViridis).domain([0, 100]);
 3. **SVG 要自带尺寸**：`svg` 元素显式设 `width`/`height`（和/或 `viewBox`），否则 resvg 光栅化尺寸不对。
 4. **序列化**：优先 `serializeSvg(svg.node())`（自动补 xmlns），或直接 `svg.node().outerHTML`。
 5. **数据来源**：外部数据通过 HTTP 请求体的 `data` 字段传入，不要在脚本里 fetch。
-6. **字体**：图表内文字（如轴标签）由 resvg 用系统字体渲染；如需自定义字体，把它放进 `manifest.fonts`（服务会传给 resvg）。
-7. **执行限制**：脚本在子进程运行，有超时（默认 10s，`RENDER_TIMEOUT_MS` 可调）。
+6. **字体**：图表内文字（如轴标签）由 resvg 用本地字体（项目 `fonts/`，不扫描系统字体）渲染；如需自定义字体，把它放进 `manifest.fonts`（服务会连同本地字体一起传给 resvg）。
+7. **执行限制**：脚本在**常驻 worker** 中运行（复用进程，d3/linkedom 保持热态），有超时（默认 10s，`RENDER_TIMEOUT_MS` 可调），超时会终止并重建 worker。
 
 ---
 

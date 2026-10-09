@@ -1,4 +1,6 @@
 import { createApp } from 'vue';
+import Antd from 'ant-design-vue';
+import 'ant-design-vue/dist/reset.css';
 import * as monaco from 'monaco-editor';
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
@@ -19,4 +21,6 @@ self.MonacoEnvironment = {
 // `import * as monaco from 'monaco-editor'` 已包含全部语言与编辑能力，无需单独注册 contribution。
 import App from './App.vue';
 
-createApp(App).mount('#app');
+const app = createApp(App);
+app.use(Antd);
+app.mount('#app');

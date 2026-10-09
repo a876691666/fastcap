@@ -9,6 +9,9 @@ export class ManifestError extends Error {
 
 const FORMATS = ['png', 'svg'] as const;
 
+/** 渲染脚本固定文件名（图表脚本入口） */
+export const RENDER_SCRIPT = 'render.js';
+
 /**
  * 解析并校验 manifest.json，填充默认值。
  * 抛 ManifestError 表示校验失败，错误信息面向调用方（开发人员/大模型）。
@@ -23,7 +26,10 @@ export function parseManifest(raw: unknown, files: Record<string, string>): Mani
     throw new ManifestError(`manifest.schema 必须为 1（当前 ${JSON.stringify(m.schema)}）`);
   }
 
-  const width = toPositiveInt(m.width, 'manifest.width');
+  const kind: 'vue' | 'chart' = m.kind === 'chart' ? 'chart' : 'vue';
+
+  // vue 模板必须有画布宽度；chart 模板 width=0 表示按 SVG 固有尺寸自适应
+  const width = kind === 'chart' ? toAutoInt(m.width, 'manifest.width') : toPositiveInt(m.width, 'manifest.width');
   const height = parseHeight(m.height);
 
   const format = (m.format ?? 'png') as string;
@@ -35,9 +41,13 @@ export function parseManifest(raw: unknown, files: Record<string, string>): Mani
   if (dpr > 4) throw new ManifestError('manifest.dpr 建议不超过 4');
 
   const template = typeof m.template === 'string' ? m.template : 'template.html';
-  const entry = typeof m.entry === 'string' ? m.entry : 'render.js';
-  if (!files[template]) throw new ManifestError(`缺少模板文件：${template}`);
-  if (!files[entry]) throw new ManifestError(`缺少脚本入口：${entry}`);
+  if (kind === 'vue') {
+    // 页面模板必须有模板文件
+    if (!files[template]) throw new ManifestError(`缺少模板文件：${template}`);
+  } else {
+    // 图表模板没有 Vue 模板，但必须有渲染脚本 render.js
+    if (!files[RENDER_SCRIPT]) throw new ManifestError(`chart 模板缺少渲染脚本：${RENDER_SCRIPT}`);
+  }
 
   const fonts = parseFonts(m.fonts, files);
   const charts = parseCharts(m.charts);
@@ -49,10 +59,10 @@ export function parseManifest(raw: unknown, files: Record<string, string>): Mani
     format: format as Manifest['format'],
     dpr,
     template,
-    entry,
     fonts,
     charts,
     ...m,
+    kind,
   };
 }
 
@@ -61,6 +71,12 @@ function toPositiveInt(v: unknown, name: string): number {
     throw new ManifestError(`${name} 必须是 1~10000 之间的整数（当前 ${JSON.stringify(v)}）`);
   }
   return v;
+}
+
+/** chart 模板宽度：0 表示自适应（按 SVG 固有尺寸），否则 1~10000 */
+function toAutoInt(v: unknown, name: string): number {
+  if (v === undefined || v === 0) return 0;
+  return toPositiveInt(v, name);
 }
 
 /** 高度：缺省或 0 = auto（由内容决定），否则 1~10000 */

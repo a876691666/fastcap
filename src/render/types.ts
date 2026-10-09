@@ -7,6 +7,8 @@
 export interface Manifest {
   /** 结构版本，当前固定为 1 */
   schema: 1;
+  /** 模板类型：vue（默认，Vue+unocss 页面模板）| chart（纯图表模板，无 Vue） */
+  kind?: 'vue' | 'chart';
   /** 最终图片宽度（px） */
   width: number;
   /** 最终图片高度（px） */
@@ -17,8 +19,6 @@ export interface Manifest {
   dpr?: number;
   /** HTML/CSS 模板文件路径，默认 template.html */
   template?: string;
-  /** d3 图表脚本入口，默认 render.js */
-  entry?: string;
   /** Satori 渲染文字所需的字体 */
   fonts?: FontSpec[];
   /** 可选：显式声明图表槽位像素尺寸（优先级低于模板占位符上的 style） */

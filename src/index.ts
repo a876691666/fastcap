@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import { ManifestError } from './render/manifest';
 import { renderPackage, type RenderEnv } from './render/pipeline';
+import { prewarmChartWorkers } from './render/execute';
+import { fontsDir } from './render/fonts';
 import type { ApiError } from './render/types';
 import * as templates from './templates';
 
@@ -47,6 +49,10 @@ export function createServer(env: ServerEnv = {}) {
         return serveExample(url.pathname);
       }
 
+      if (req.method === 'GET' && url.pathname.startsWith('/api/font-files/')) {
+        return serveFontFile(decodeURIComponent(url.pathname.slice('/api/font-files/'.length)));
+      }
+
       if (req.method === 'POST' && url.pathname === '/render') {
         return handleRender(req, { workdirBase, timeoutMs });
       }
@@ -59,6 +65,7 @@ export function createServer(env: ServerEnv = {}) {
     },
   });
 
+  prewarmChartWorkers();
   return server;
 }
 
@@ -68,6 +75,7 @@ if (import.meta.main) {
   console.log(`  GET  /                     模板管理界面（列表/编辑/预览/保存）`);
   console.log(`  POST /api/templates        模板 CRUD（文件存储，TEMPLATES_DIR=${templates.templatesDir()}）`);
   console.log(`  POST /api/templates/:id/render  按模板 ID + data 渲染图片（调用方入口）`);
+  console.log(`  POST /api/templates/:id/stages  管线阶段预览（HTML / SVG 截断）`);
   console.log(`  GET  /playground           独立模板编辑器`);
   console.log(`  POST /render               通用代码包渲染`);
   console.log(`  GET  /health               健康检查`);
@@ -126,6 +134,7 @@ async function handleTemplateApi(
       try {
         const id = await templates.createTemplate({
           name: body.name,
+          kind: (body.kind as templates.TemplateKind) ?? undefined,
           files: body.files as never,
           data: body.data,
         });
@@ -149,7 +158,11 @@ async function handleTemplateApi(
       const body = await safeJson(req);
       if (!body) return err('BAD_REQUEST', '请求体必须是 JSON', 400);
       const t0 = performance.now();
-      const result = await templates.renderTemplate(id, body.data, body.options as never, env);
+      const result = await templates.renderTemplate(
+        id, body.data, body.options as never, env,
+        undefined,
+        body.files as Record<string, string> | undefined,
+      );
       return new Response(result.buffer, {
         status: 200,
         headers: {
@@ -160,9 +173,30 @@ async function handleTemplateApi(
         },
       });
     }
+    if (action === 'stages' && req.method === 'POST') {
+      const body = await safeJson(req);
+      if (!body) return err('BAD_REQUEST', '请求体必须是 JSON', 400);
+      const t0 = performance.now();
+      const result = await templates.renderTemplate(
+        id, body.data, body.options as never, env,
+        { captureStages: true },
+        body.files as Record<string, string> | undefined,
+      );
+      if (!result.stages) return err('RENDER_FAILED', '未采集到管线阶段信息', 422);
+      return Response.json(
+        { ok: true, stages: result.stages },
+        { headers: { 'X-Render-Time-Ms': Math.round(performance.now() - t0).toString() } },
+      );
+    }
     if (action === 'copy' && req.method === 'POST') {
       const newId = await templates.copyTemplate(id);
       return Response.json({ id: newId, ok: true });
+    }
+    if (action === 'rename' && req.method === 'POST') {
+      const body = await safeJson(req);
+      if (!body) return err('BAD_REQUEST', '请求体必须是 JSON', 400);
+      const next = await templates.renameTemplate(id, String(body.id ?? ''));
+      return Response.json({ id: next, ok: true });
     }
     if (action === 'versions' && !arg) {
       if (req.method === 'GET') return Response.json({ list: await templates.listVersions(id) });
@@ -213,7 +247,7 @@ async function handleTemplateApi(
 
 async function safeJson(
   req: Request,
-): Promise<{ name?: string; files?: unknown; data?: unknown; options?: unknown } | null> {
+): Promise<{ id?: string; name?: string; kind?: string; files?: unknown; data?: unknown; options?: unknown } | null> {
   try {
     return (await req.json()) as never;
   } catch {
@@ -222,6 +256,7 @@ async function safeJson(
 }
 
 function templateError(e: unknown): Response {
+  if (e instanceof templates.TemplateConflictError) return err('CONFLICT', e.message, 409);
   if (e instanceof templates.TemplateError) return err('NOT_FOUND', e.message, 404);
   if (e instanceof ManifestError) return err('INVALID_PACKAGE', e.message, 422);
   return err('RENDER_FAILED', e instanceof Error ? e.message : String(e), 422);
@@ -244,6 +279,22 @@ async function serveFrontendAsset(pathname: string): Promise<Response> {
   const ext = rel.split('.').pop() ?? '';
   const ct = ext === 'js' ? 'text/javascript' : ext === 'css' ? 'text/css' : ext === 'svg' ? 'image/svg+xml' : 'application/octet-stream';
   return new Response(file, { headers: { 'Content-Type': ct } });
+}
+
+/** 静态提供字体文件（供 HTML 阶段预览 @font-face 使用） */
+async function serveFontFile(name: string): Promise<Response> {
+  if (!name || name.includes('/') || name.includes('..') || !/^[\w.-]+$/.test(name)) {
+    return err('NOT_FOUND', '非法字体文件名', 404);
+  }
+  const file = Bun.file(join(fontsDir(), name));
+  if (!(await file.exists())) return err('NOT_FOUND', `字体不存在: ${name}`, 404);
+  const ext = name.split('.').pop()?.toLowerCase();
+  const ct =
+    ext === 'ttf' ? 'font/ttf'
+    : ext === 'otf' ? 'font/otf'
+    : ext === 'ttc' ? 'font/collection'
+    : 'application/octet-stream';
+  return new Response(file, { headers: { 'Content-Type': ct, 'Cache-Control': 'public, max-age=86400' } });
 }
 
 /** 独立模板编辑器页面（/playground，单文件无构建） */

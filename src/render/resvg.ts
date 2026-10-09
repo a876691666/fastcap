@@ -11,8 +11,9 @@ export interface SvgToPngOptions {
 
 /** SVG -> PNG Buffer */
 export function svgToPng(svg: string, opts: SvgToPngOptions = {}): Buffer {
+  // 只使用显式提供的字体文件，不扫描系统字体（系统字体扫描每次约 100ms，且不可控）
   const resvg = new Resvg(ensureSvgXmlns(svg), {
-    font: { loadSystemFonts: true, fontFiles: opts.fontFiles },
+    font: { loadSystemFonts: false, fontFiles: opts.fontFiles },
     background: opts.background,
     ...(opts.width ? { fitTo: { mode: 'width' as const, value: Math.round(opts.width) } } : {}),
   });
@@ -40,10 +41,35 @@ export function ensureSvgXmlns(svg: string): string {
   return svg;
 }
 
-/** 读取 SVG 固有尺寸（root 的 width/height），用于 auto-height 时确定图表槽位尺寸 */
+/** 读取 SVG 固有尺寸（root 的 width/height，缺省用 viewBox），用于 auto-height 时确定图表槽位尺寸 */
 export function svgIntrinsicSize(svg: string): { width: number; height: number } {
-  const r = new Resvg(ensureSvgXmlns(svg), {});
+  // 关键性能点：直接解析根 <svg> 属性，避免实例化 resvg（每次 ~100ms，且仅为读取尺寸）
+  const end = svg.indexOf('>');
+  const openTag = end >= 0 ? svg.slice(0, end + 1) : svg.slice(0, 1000);
+  const width = pxAttr(openTag, 'width');
+  const height = pxAttr(openTag, 'height');
+  if (width > 0 && height > 0) return { width, height };
+
+  const vb = openTag.match(/viewBox=["']\s*[-\d.]+[ ,]+[-\d.]+[ ,]+([\d.]+)[ ,]+([\d.]+)/i);
+  if (vb) {
+    const vw = Number(vb[1]);
+    const vh = Number(vb[2]);
+    if (vw > 0 && vh > 0) return { width: width || vw, height: height || vh };
+  }
+
+  // 兜底：交给 resvg 解析（关闭系统字体扫描）
+  const r = new Resvg(ensureSvgXmlns(svg), { font: { loadSystemFonts: false } });
   if (r.width > 0 && r.height > 0) return { width: r.width, height: r.height };
   const img = r.render();
   return { width: img.width, height: img.height };
+}
+
+/** 读取开标签上的 px 长度属性（百分比/非数字返回 0） */
+function pxAttr(openTag: string, name: string): number {
+  const m = openTag.match(new RegExp(`[\\s]${name}=["']([^"']+)["']`, 'i'));
+  if (!m) return 0;
+  const v = m[1].trim();
+  if (v.endsWith('%')) return 0;
+  const n = Number.parseFloat(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }

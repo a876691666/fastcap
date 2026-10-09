@@ -62,6 +62,21 @@ async function main() {
   const r2 = await fetch(`${base}/api/templates/${id}/render`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   check('缺省 data 也能渲染（用默认 data.json）', r2.status === 200, r2.status);
 
+  // 5.1) 管线阶段预览（HTML / SVG 截断）
+  const stRes = await fetch(`${base}/api/templates/${id}/stages`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: { title: '阶段预览', subtitle: 'y' } }),
+  });
+  const st: any = await stRes.json();
+  const s = st.stages;
+  check('POST /:id/stages → 200 + stages', stRes.status === 200 && !!s, st);
+  check('阶段 html 为 SSR 后 HTML（含渲染标题）', typeof s?.html === 'string' && s.html.includes('阶段预览'), s?.html);
+  check('阶段 svg 为 Satori 输出', typeof s?.svg === 'string' && s.svg.startsWith('<svg'), s?.svg?.slice(0, 40));
+  check('阶段 finalSvg 为截断后 SVG', typeof s?.finalSvg === 'string' && s.finalSvg.startsWith('<svg'), s?.finalSvg?.slice(0, 40));
+  check('阶段含尺寸与截断元信息', typeof s?.width === 'number' && typeof s?.height === 'number' && typeof s?.autoHeight === 'boolean', { w: s?.width, h: s?.height });
+  check('阶段含字体描述（供预览 @font-face）', Array.isArray(s?.fonts) && s.fonts.length > 0 && !!s.fonts[0].url && s.fonts[0].family, s?.fonts?.[0]);
+  check('阶段 HTML 已把未知 font-family 归一到加载字体', typeof s?.html === 'string' && !/Arial/i.test(s.html) && /Noto Sans/i.test(s.html), s?.html?.slice(0, 160));
+
   // 6) 更新
   const upd = await fetch(`${base}/api/templates/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '改名', data: { title: '新' } }) });
   check('PUT 更新 → ok', upd.status === 200);
@@ -101,6 +116,74 @@ async function main() {
   // 8) 不存在的模板渲染 → 404
   const r404 = await fetch(`${base}/api/templates/nonexistent/render`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   check('不存在模板渲染 → 404', r404.status === 404, r404.status);
+
+  // 9) 图表模板（kind=chart）：独立渲染 + 被 Vue 模板以 <Chart> 组件引用
+  const chartCreated = await post('/api/templates', {
+    name: '测试图表',
+    kind: 'chart',
+    data: { values: [3, 8, 4, 10, 6] },
+  });
+  const chartId: string = chartCreated.body.id;
+  check('创建图表模板 → kind=chart', chartCreated.status === 200 && typeof chartId === 'string', chartCreated.body);
+
+  const chartList: any = await fetch(`${base}/api/templates`).then((r) => r.json());
+  check('列表含 kind=chart', chartList.list?.some((t: { id: string }) => t.id === chartId && t.kind === 'chart'), chartList);
+
+  const chartRender = await fetch(`${base}/api/templates/${chartId}/render`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const chartPng = Buffer.from(await chartRender.arrayBuffer());
+  check('图表模板独立渲染 → 200 PNG', chartRender.status === 200 && chartPng[0] === 0x89 && chartPng[1] === 0x50, chartRender.status);
+
+  const vueWithChart = await post('/api/templates', {
+    name: '含图表页面',
+    kind: 'vue',
+    files: { 'template.vue': `<div style="display:flex;width:600px"><Chart id="${chartId}" :data="data.chart" /></div>` },
+    data: { chart: { values: [1, 2, 3, 4] } },
+  });
+  const vueId: string = vueWithChart.body.id;
+  check('创建引用图表的 Vue 模板', vueWithChart.status === 200 && typeof vueId === 'string', vueWithChart.body);
+
+  const vueRes = await fetch(`${base}/api/templates/${vueId}/render`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const vuePng = Buffer.from(await vueRes.arrayBuffer());
+  check('Vue 模板内嵌 <Chart> 渲染 → 200 PNG', vueRes.status === 200 && vuePng[0] === 0x89 && vuePng[1] === 0x50, vueRes.status);
+
+  const vst: any = await fetch(`${base}/api/templates/${vueId}/stages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json());
+  check('阶段 HTML 已把 <Chart> 占位替换为图表图片', (vst.stages?.html ?? '').includes('<img') && (vst.stages?.html ?? '').includes('data:image') && !(vst.stages?.html ?? '').includes('data-chart-ref'), (vst.stages?.html ?? '').slice(0, 120));
+
+  // 9.1) 修改模板 ID：新 ID 生效、旧 ID 失效、引用自动改写、撞车 → 409
+  const newChartId = chartId + 'x';
+  const ren = await fetch(`${base}/api/templates/${chartId}/rename`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: newChartId }),
+  });
+  const renBody: any = await ren.json();
+  check('POST /:id/rename → 新 ID', ren.status === 200 && renBody.id === newChartId, renBody);
+  const oldGone = await fetch(`${base}/api/templates/${chartId}`);
+  check('改 ID 后旧 ID → 404', oldGone.status === 404, oldGone.status);
+  const refTpl: any = await fetch(`${base}/api/templates/${vueId}`).then((r) => r.json());
+  check('改 ID 后其他模板引用自动改写', (refTpl.files?.['template.vue'] ?? '').includes(`id="${newChartId}"`), refTpl.files?.['template.vue']);
+  const dup = await fetch(`${base}/api/templates/${newChartId}/rename`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: vueId }),
+  });
+  check('改 ID 撞车 → 409 CONFLICT', dup.status === 409, dup.status);
+  const badRen = await fetch(`${base}/api/templates/${newChartId}/rename`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: 'bad id!' }),
+  });
+  check('非法 ID → 404', badRen.status === 404, badRen.status);
+
+  // 引用不存在 / 非图表的模板 → 渲染失败
+  const badVue = await post('/api/templates', {
+    name: '错误引用', kind: 'vue',
+    files: { 'template.vue': `<div style="display:flex"><Chart id="nonexistent" :data="data" /></div>` },
+  });
+  const badRes = await fetch(`${base}/api/templates/${badVue.body.id}/render`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  check('引用不存在的图表模板 → 渲染失败', badRes.status === 422, badRes.status);
+
+  await fetch(`${base}/api/templates/${chartId}`, { method: 'DELETE' });
+  await fetch(`${base}/api/templates/${newChartId}`, { method: 'DELETE' });
+  await fetch(`${base}/api/templates/${vueId}`, { method: 'DELETE' });
+  await fetch(`${base}/api/templates/${badVue.body.id}`, { method: 'DELETE' });
 
   server.stop();
   await rm(baseDir, { recursive: true, force: true });

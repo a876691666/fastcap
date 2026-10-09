@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: 测试 + 前端构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: 缓存 Bun 安装缓存
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock', 'frontend/bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: 安装后端依赖
+        run: bun install --frozen-lockfile
+
+      - name: 运行测试
+        run: bun run test
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
+      - name: 构建前端
+        working-directory: frontend
+        run: bun run build
+
+      - name: 上传前端产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+
+  docker:
+    name: 构建 Docker 镜像
+    runs-on: ubuntu-latest
+    needs: verify
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建镜像
+        run: docker build -t render-service:${{ github.sha }} .

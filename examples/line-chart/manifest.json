@@ -4,6 +4,5 @@
   "height": 630,
   "format": "png",
   "dpr": 2,
-  "template": "template.html",
-  "entry": "render.js"
+  "template": "template.html"
 }

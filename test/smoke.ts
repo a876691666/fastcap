@@ -3,11 +3,13 @@
  * 不用 satori-html，直接用 React-elements-like 对象。
  * 运行：bun test/smoke.ts
  */
+import { join } from 'node:path';
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
 import * as d3 from 'd3';
 
-const fontData = await Bun.file('/System/Library/Fonts/Supplemental/Arial.ttf').arrayBuffer();
+// 用仓库内置字体（跨平台，避免依赖 macOS 系统字体路径）
+const fontData = await Bun.file(join(import.meta.dir, '..', 'fonts', 'NotoSans-Regular.ttf')).arrayBuffer();
 
 // 1) satori 渲染纯对象元素 -> SVG
 const svg = await satori(
