@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import pkg from '../package.json';
 import { ManifestError } from './render/manifest';
 import { renderPackage, type RenderEnv } from './render/pipeline';
 import { prewarmChartWorkers } from './render/execute';
@@ -30,7 +31,7 @@ export function createServer(env: ServerEnv = {}) {
       const url = new URL(req.url);
 
       if (req.method === 'GET' && url.pathname === '/health') {
-        return Response.json({ ok: true, service: 'render-service', version: '0.1.0' });
+        return Response.json({ ok: true, service: 'render-service', version: pkg.version });
       }
 
       if (req.method === 'GET' && url.pathname === '/') {

@@ -1,5 +1,5 @@
 # ---------- 构建前端（Vue3 + Vite） ----------
-FROM oven/bun:1 AS frontend
+FROM oven/bun:1-alpine AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/bun.lock ./
 RUN bun install
@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN bun run build
 
 # ---------- 运行时 ----------
-FROM oven/bun:1
+FROM oven/bun:1-alpine
 WORKDIR /app
 
 COPY package.json bun.lock ./

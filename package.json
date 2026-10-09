@@ -1,6 +1,6 @@
 {
   "name": "render-service",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Satori + resvg + d3 image render service (Bun). HTTP API accepts a code package (manifest + HTML/CSS template + d3 script) and returns a rendered image.",
