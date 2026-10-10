@@ -11,6 +11,7 @@
 import { join } from 'node:path';
 import { renderPackage, type RenderEnv, type RenderOptions, type RenderResult, type ChartResolver } from './render/pipeline';
 import { renderChartImage } from './render/chart';
+import { contentKey } from './render/cache';
 import { ManifestError } from './render/manifest';
 
 export type TemplateKind = 'vue' | 'chart';
@@ -454,6 +455,13 @@ export async function renderTemplate(
       'manifest.json': manifestJson,
       'render.js': files['render.js'] ?? '',
     };
+    // 结果缓存：key 由 data + 图表文件内容决定（md5）。采集阶段产物时跳过缓存。
+    const cache = renderOpts?.captureStages ? undefined : env.cache;
+    const cacheKey = cache ? contentKey(['chart', chartFiles, reqData ?? null]) : '';
+    if (cache && cacheKey) {
+      const hit = await cache.get(cacheKey);
+      if (hit) return { ...hit, cached: true };
+    }
     const img = await renderChartImage(chartFiles, reqData, env);
     const stages = renderOpts?.captureStages
       ? {
@@ -467,6 +475,7 @@ export async function renderTemplate(
           fonts: [],
         }
       : undefined;
+    if (cache) await cache.set(cacheKey, { buffer: img.buffer, contentType: img.contentType });
     return { buffer: img.buffer, contentType: img.contentType, stages };
   }
 

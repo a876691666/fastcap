@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import pkg from '../package.json';
 import { ManifestError } from './render/manifest';
 import { renderPackage, type RenderEnv } from './render/pipeline';
+import { createRenderCache } from './render/cache';
 import { prewarmChartWorkers } from './render/execute';
 import { fontsDir } from './render/fonts';
 import type { ApiError } from './render/types';
@@ -14,6 +15,12 @@ export interface ServerEnv extends Partial<RenderEnv> {
   host?: string;
   port?: number;
   maxBody?: number;
+  /** 结果缓存目录（默认 .render-cache/results） */
+  cacheDir?: string;
+  /** 结果缓存 TTL（毫秒，默认 24h；<=0 关闭 TTL） */
+  cacheTtlMs?: number;
+  /** 结果缓存条数上限（默认 500；<=0 不限制条数） */
+  cacheMax?: number;
 }
 
 export function createServer(env: ServerEnv = {}) {
@@ -22,6 +29,11 @@ export function createServer(env: ServerEnv = {}) {
   const workdirBase = env.workdirBase ?? join(import.meta.dir, '..', '.render-cache');
   const timeoutMs = env.timeoutMs ?? Number(process.env.RENDER_TIMEOUT_MS ?? 10000);
   const maxBody = env.maxBody ?? Number(process.env.RENDER_MAX_BODY ?? 20 * 1024 * 1024);
+  const cacheDir = env.cacheDir ?? process.env.RENDER_CACHE_DIR ?? join(workdirBase, 'results');
+  const cacheTtlMs = env.cacheTtlMs ?? Number(process.env.RENDER_CACHE_TTL_MS ?? 24 * 60 * 60 * 1000);
+  const cacheMax = env.cacheMax ?? Number(process.env.RENDER_CACHE_MAX ?? 500);
+  const cache = env.cache ?? createRenderCache(cacheDir, cacheTtlMs, cacheMax);
+  const renderEnv: RenderEnv = { workdirBase, timeoutMs, cache };
 
   const server = Bun.serve({
     hostname: host,
@@ -55,11 +67,11 @@ export function createServer(env: ServerEnv = {}) {
       }
 
       if (req.method === 'POST' && url.pathname === '/render') {
-        return handleRender(req, { workdirBase, timeoutMs });
+        return handleRender(req, renderEnv);
       }
 
       if (url.pathname === '/api/templates' || url.pathname.startsWith('/api/templates/')) {
-        return handleTemplateApi(req, url.pathname, { workdirBase, timeoutMs });
+        return handleTemplateApi(req, url.pathname, renderEnv);
       }
 
       return err('NOT_FOUND', `没有路由 ${req.method} ${url.pathname}`, 404);
@@ -105,6 +117,7 @@ async function handleRender(req: Request, env: RenderEnv): Promise<Response> {
         'Content-Type': result.contentType,
         'Content-Length': String(result.buffer.byteLength),
         'Cache-Control': 'no-store',
+        'X-Cache': result.cached ? 'HIT' : 'MISS',
         'X-Render-Time-Ms': Math.round(performance.now() - t0).toString(),
       },
     });
@@ -170,6 +183,7 @@ async function handleTemplateApi(
           'Content-Type': result.contentType,
           'Content-Length': String(result.buffer.byteLength),
           'Cache-Control': 'no-store',
+          'X-Cache': result.cached ? 'HIT' : 'MISS',
           'X-Render-Time-Ms': Math.round(performance.now() - t0).toString(),
         },
       });

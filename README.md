@@ -118,7 +118,7 @@ render-service/
 ## 测试
 
 ```bash
-bun run test                     # 全量：smoke/html/unocss/integration/http/contract/vue/templates
+bun run test                     # 全量：smoke/html/unocss/integration/http/contract/vue/templates/cache
 bun test/vl.ts                   # vl 图表（需 RENDER_FONTS_DIR 字体）
 ```
 
@@ -134,9 +134,13 @@ curl -X POST http://127.0.0.1:8787/api/templates/<id>/render \
 
 样板：`samples/bar-chart.json` / `line-chart.json` / `vl.json`（`{files,data}` 可直接 POST `/render`）。
 
+## 结果缓存
+
+`/render` 与 `/api/templates/:id/render` 的结果按 **`md5(data + 模板文件内容 + options)`** 落盘缓存（默认 `.render-cache/results/`）。同 key 再次请求直接返回缓存图片，响应头 `X-Cache: HIT|MISS` 标识命中。TTL 默认 24h，条数上限默认 500，超过按写入时间**滚动淘汰**最旧条目（`RENDER_CACHE_DIR` / `RENDER_CACHE_TTL_MS` / `RENDER_CACHE_MAX` 可调；模板改动会改变 key 自动失效）。
+
 ## 环境变量
 
-`PORT` `HOST` `RENDER_WORKDIR` `RENDER_TIMEOUT_MS` `RENDER_MAX_BODY` `RENDER_FONTS_DIR` `TEMPLATES_DIR` `RENDER_WORKERS` `RENDER_WORKER_MAX_JOBS` `RENDER_WORKER_IDLE_MS` —— 见 [API 文档](docs/04-service-api.md)。
+`PORT` `HOST` `RENDER_WORKDIR` `RENDER_TIMEOUT_MS` `RENDER_MAX_BODY` `RENDER_FONTS_DIR` `TEMPLATES_DIR` `RENDER_WORKERS` `RENDER_WORKER_MAX_JOBS` `RENDER_WORKER_IDLE_MS` `RENDER_CACHE_DIR` `RENDER_CACHE_TTL_MS` `RENDER_CACHE_MAX` —— 见 [API 文档](docs/04-service-api.md)。
 
 ## 部署与接入
 

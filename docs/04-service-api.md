@@ -182,6 +182,9 @@ POST /render
 | `RENDER_WORKERS` | `2` | 常驻 render.js worker 并发数 |
 | `RENDER_WORKER_MAX_JOBS` | `500` | 每个 worker 处理多少任务后回收（限制模块缓存增长） |
 | `RENDER_WORKER_IDLE_MS` | `60000` | 热生存时限：空闲超过该毫秒数的 worker 被回收（0 = 不回收） |
+| `RENDER_CACHE_DIR` | `./.render-cache/results` | 结果缓存目录（key = data + 模板文件内容 md5） |
+| `RENDER_CACHE_TTL_MS` | `86400000`（24h） | 缓存有效期，超时视为失效并删除（`0` = 不过期） |
+| `RENDER_CACHE_MAX` | `500` | 缓存条数上限，超过按写入时间滚动淘汰最旧条目（`0` = 不限条数） |
 
 ---
 

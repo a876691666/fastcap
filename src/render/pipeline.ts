@@ -1,6 +1,7 @@
 import { join, basename } from 'node:path';
 import satori from 'satori';
 import type { Font } from 'satori';
+import { contentKey, type RenderCache } from './cache';
 import { runChartScript } from './execute';
 import { defaultFontPaths, loadFonts, localFontFiles, parseFontFile, type LoadedFont } from './fonts';
 import { extractChartRefs, extractChartSlots, parseTemplate, renderPreviewHtml, rootToSatori, type ChartInjection } from './html';
@@ -30,11 +31,15 @@ export interface RenderEnv {
   timeoutMs: number;
   /** 解析 vue 模板中 <Chart id> 组件（缺省时若模板用了 <Chart> 会报错） */
   resolveChart?: ChartResolver;
+  /** 渲染结果缓存（按 data + 模板文件内容 md5）；未提供则不做缓存 */
+  cache?: RenderCache;
 }
 
 export interface RenderResult {
   buffer: Buffer;
   contentType: string;
+  /** 是否命中缓存 */
+  cached?: boolean;
   /** 仅当 captureStages=true 时存在：管线中间产物，供编辑器调试预览 */
   stages?: RenderStages;
 }
@@ -79,6 +84,14 @@ export async function renderPackage(
   env: RenderEnv,
   opts: RenderOptions = {},
 ): Promise<RenderResult> {
+  // 结果缓存：key 由 data + 代码包文件内容 + options 决定（md5）。采集阶段产物时跳过缓存。
+  const cache = opts.captureStages ? undefined : env.cache;
+  const cacheKey = cache ? contentKey([req.files, req.data ?? null, req.options ?? null]) : '';
+  if (cache && cacheKey) {
+    const hit = await cache.get(cacheKey);
+    if (hit) return { ...hit, cached: true };
+  }
+
   const pkg = await loadPackage(req.files, env.workdirBase);
   try {
     const manifest = applyOverrides(pkg.manifest, req.options);
@@ -183,9 +196,12 @@ export async function renderPackage(
         }
       : undefined;
     if (manifest.format === 'svg') {
-      return { buffer: Buffer.from(finalSvg), contentType: 'image/svg+xml; charset=utf-8', stages };
+      const svgResult: RenderResult = { buffer: Buffer.from(finalSvg), contentType: 'image/svg+xml; charset=utf-8', stages };
+      if (cache) await cache.set(cacheKey, { buffer: svgResult.buffer, contentType: svgResult.contentType });
+      return svgResult;
     }
     const png = svgToPng(finalSvg, { fontFiles });
+    if (cache) await cache.set(cacheKey, { buffer: png, contentType: 'image/png' });
     return { buffer: png, contentType: 'image/png', stages };
   } finally {
     await pkg.cleanup();

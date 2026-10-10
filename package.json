@@ -1,6 +1,6 @@
 {
   "name": "render-service",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "Satori + resvg + d3 image render service (Bun). HTTP API accepts a code package (manifest + HTML/CSS template + d3 script) and returns a rendered image.",
@@ -16,7 +16,8 @@
     "contract": "bun test/contract.ts",
     "vue": "bun test/vue.ts",
     "templates": "bun test/templates.ts",
-    "test": "bun test/smoke.ts && bun test/html.ts && bun test/unocss.ts && bun test/integration.ts && bun test/http.ts && bun test/contract.ts && bun test/vue.ts && bun test/templates.ts",
+    "cache": "bun test/cache.ts",
+    "test": "bun test/smoke.ts && bun test/html.ts && bun test/unocss.ts && bun test/integration.ts && bun test/http.ts && bun test/contract.ts && bun test/vue.ts && bun test/templates.ts && bun test/cache.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
